@@ -1,0 +1,96 @@
+/***************************************************
+***          port reservation script V1.0       ****
+***            developed by Usama.elsaid        ****
+***              uelsaid@juniper.net            ****				
+****************************************************/
+version 1.0;
+ns junos = "http://xml.juniper.net/junos/*/junos";
+ns xnm = "http://xml.juniper.net/xnm/1.1/xnm";
+ns jcs = "http://xml.juniper.net/junos/commit-scripts/1.0";
+import "../import/junos.xsl";
+var $arguments = {
+     <argument> {	
+          <name> "project";
+          <description> "reserve port to which project"; 
+     }
+     <argument> {	
+          <name> "interface";
+          <description> "name of physical interface which you want to reserve"; 	
+     }}
+param $project;
+param $interface;
+match / {
+<op-script-results> {
+var $date_ =jcs:split(" ",$localtime)[3] _ "-" _ jcs:split(" ",$localtime)[2] _ "-" _ jcs:split(" ",$localtime)[5];
+mvar $res_result; 
+mvar $res_interface = $interface;
+mvar $project_ = $project;
+mvar $configuration_confimation="y";
+var $interfaces-rpc = {
+				<get-interface-information>{ <descriptions>;} }
+var $interfaces_configuration = jcs:invoke($interfaces-rpc);
+for-each ( $interfaces_configuration/physical-interface){
+if ( description[contains( ., "eserved")]){
+set $res_result =  $res_result _ name _"      " _ description _ "      ((operational status)) "_ oper-status _"\n";
+}}
+if (jcs:empty($project_)){
+set $project_ = normalize-space(jcs:get-input("please enter project name  ==> "));
+while ( jcs:empty($project_)) {
+set $project_ = normalize-space(jcs:get-input("please enter project name  ==> ")); 
+}}
+if (jcs:empty($res_interface)){
+set $res_interface = normalize-space(jcs:get-input("\n**list of current reserved ports : \n" _ $res_result _"\n please enter port you want to reserve ==> "));
+while ( jcs:empty($res_interface)) {
+set $res_interface = normalize-space(jcs:get-input("please enter port you want to reserve ==> ")) ; 
+}}
+var $res_interfaces_terse-rpc={<get-interface-information>{<terse>; <interface-name>$res_interface; 
+}
+}
+var $res_interfaces_terse-info=jcs:invoke($res_interfaces_terse-rpc);
+var $res_interfaces_desc-rpc = {
+				<get-interface-information>{ <descriptions>; <interface-name>$res_interface;
+				} }
+var $res_interfaces_desc-conf = jcs:invoke($res_interfaces_desc-rpc);
+var $current_desc = $res_interfaces_desc-conf/physical-interface/description ;
+var $new_description = "Reserved for_" _ $project_ _ "_by_" _ $user _ "_" _ $date_ ;
+if (not(jcs:empty($current_desc))){
+set $configuration_confimation = normalize-space(jcs:get-input("\nwill set description @ "_ $res_interfaces_terse-info/physical-interface/name _ " =====> " _ $new_description _ "\n \n !! there is a current description at "_ $res_interfaces_desc-conf/physical-interface/name _ " =====> " _ $current_desc _ "\nwould you like to proceed [y/n]:"));
+mvar $loopbreak=0 ;
+while ($loopbreak == 0 ) {
+if ($configuration_confimation == "y"){
+set $loopbreak= 1;}
+else if ($configuration_confimation == "n"){
+set $configuration_confimation="n";
+set $loopbreak= 1;
+<output>"no configuration change ..";
+}
+else {
+set $configuration_confimation = normalize-space(jcs:get-input( "please enter valid choice [y/n]:"));}
+}
+}
+if (not(jcs:empty($res_interfaces_terse-info/physical-interface/name))){
+if (jcs:empty($current_desc)){
+<output> "\nwill set description @ "_ $res_interfaces_terse-info/physical-interface/name _ " =====> " _ $new_description  ;}
+}
+if ($configuration_confimation = "y"){
+var $configuration = <configuration> {
+<interfaces>{
+ <interface>{
+   <name>$res_interface;
+   <description>$new_description; 
+   }}
+   } 
+var $connection = jcs:open();
+var $results := { call jcs:load-configuration( $connection,$configuration ); }
+if( $results//xnm:error ) {
+for-each( $results//xnm:error ) {
+<output> message;
+}
+}
+if( jcs:empty( $results//xnm:error ) ) {
+<output> "\nport reservation completed ";
+}
+var $close-results = jcs:close($connection);
+}
+}
+}
